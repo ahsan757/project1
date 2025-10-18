@@ -1,10 +1,5 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-import motor.motor_asyncio
-from datetime import datetime
-from typing import Optional, List
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
 from typing import List, Optional
 from motor.motor_asyncio import AsyncIOMotorClient
 from bson import ObjectId
@@ -26,18 +21,21 @@ import os
 import uuid
 import io
 
-# Database connection
-client = motor.motor_asyncio.AsyncIOMotorClient('mongodb://localhost:27017')
-db = client["yarn_db"]
-requests_collection = db["requests"]
-received_collection = db["received"]
-vendor_collection = db["vendor"]
+# Initialize FastAPI app
+app = FastAPI()
+
+# MongoDB connection setup
+MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017/")
 DB_NAME = "order_system"
 ORDERS_COLLECTION_NAME = "orders"
 KNITTING_COLLECTION_NAME = "knitting"
 DYING_COLLECTION_NAME = "dying"
 TRIM_COLLECTION_NAME="triming"
 ADMIN_COLLECTION="admin"
+
+
+# Connect to MongoDB
+client = AsyncIOMotorClient(MONGO_URI)
 db = client[DB_NAME]
 orders_collection = db[ORDERS_COLLECTION_NAME]
 knitting_collection = db[KNITTING_COLLECTION_NAME]
@@ -45,32 +43,18 @@ dying_collection = db[DYING_COLLECTION_NAME]
 trim_collection=db[TRIM_COLLECTION_NAME]
 admin_collection=db[ADMIN_COLLECTION]
 
-app = FastAPI()
+def convert_objectid_to_str(data):
+    """Recursively converts ObjectId to string in the data."""
+    if isinstance(data, dict):
+        return {key: convert_objectid_to_str(value) for key, value in data.items()}
+    elif isinstance(data, list):
+        return [convert_objectid_to_str(item) for item in data]
+    elif isinstance(data, ObjectId):
+        return str(data)
+    else:
+        return data
 
-# Define the Pydantic model for the yarn request
-class YarnRequest(BaseModel):
-    count: int
-    content: str
-    spun_type: str
-    bags: int
-    kgs: float
-    status: str = "pending"
-
-# Model to represent received yarn
-class YarnReceived(BaseModel):
-    spun_type: str
-    kgs_received: float
-    received_date: datetime
-    vendor_id: str
-
-# Model for vendor registration
-class Vendor(BaseModel):
-    company_name: str
-    broker_name: str
-    contract_type: str
-    contact: str
-    gst_number: str
-    prefix: str
+# Define the Label model with dynamic trims
 class Label(BaseModel):
     vendor_id: str
     quality: str
@@ -115,116 +99,6 @@ class trimRecord(BaseModel):
     po_number: str  # PO number for which yarn is tracked
     available_yarn: float  # The total available yarn for the PO number
     completed_yarn: float 
-
-
-# ---------------- EXISTING ROUTES ---------------- #
-
-@app.post("/register_vendor/")
-async def register_vendor(vendor: Vendor):
-    last_vendor = await vendor_collection.find_one({"prefix": vendor.prefix}, sort=[("vendor_id", -1)])
-    if last_vendor:
-        new_vendor_id = f"{vendor.prefix}{int(last_vendor['vendor_id'][len(vendor.prefix):]) + 1}"
-    else:
-        new_vendor_id = f"{vendor.prefix}1"
-
-    vendor_data = vendor.dict()
-    vendor_data["vendor_id"] = new_vendor_id
-    await vendor_collection.insert_one(vendor_data)
-    return {"message": "Vendor registered successfully", "vendor_id": new_vendor_id}
-
-
-@app.post("/request_yarn/")
-async def request_yarn(request: YarnRequest):
-    request_data = request.dict()
-    request_data['created_at'] = datetime.now()
-    result = await requests_collection.insert_one(request_data)
-    return {"message": "Request created", "request_id": str(result.inserted_id)}
-
-
-@app.put("/receive_yarn/")
-async def receive_yarn(received_data: YarnReceived):
-    vendor = await vendor_collection.find_one({"vendor_id": received_data.vendor_id})
-    if not vendor:
-        raise HTTPException(status_code=400, detail="Please register the vendor first.")
-
-    request = await requests_collection.find_one({
-        "spun_type": received_data.spun_type,
-        "status": "pending"
-    })
-    if not request:
-        raise HTTPException(status_code=404, detail="Request not found")
-
-    remaining_kgs = request['kgs'] - received_data.kgs_received
-
-    received_entry = {
-        "spun_type": received_data.spun_type,
-        "kgs_received": received_data.kgs_received,
-        "received_date": received_data.received_date,
-        "request_id": str(request["_id"]),
-        "vendor_id": received_data.vendor_id
-    }
-    await received_collection.insert_one(received_entry)
-
-    if remaining_kgs <= 0:
-        update_data = {"status": "completed", "received_at": datetime.now()}
-    else:
-        update_data = {"kgs": remaining_kgs}
-
-    await requests_collection.update_one(
-        {"_id": request["_id"]},
-        {"$set": update_data}
-    )
-
-    return {"message": "Yarn received successfully", "remaining_kgs": remaining_kgs}
-
-
-# ---------------- NEW ROUTES ---------------- #
-
-# View a specific vendor by vendor_id
-@app.get("/view_vendor/{vendor_id}")
-async def view_vendor(vendor_id: str):
-    vendor = await vendor_collection.find_one({"vendor_id": vendor_id}, {"_id": 0})
-    if not vendor:
-        raise HTTPException(status_code=404, detail="Vendor not found")
-    return vendor
-
-
-# Delete a vendor by vendor_id
-@app.delete("/delete_vendor/{vendor_id}")
-async def delete_vendor(vendor_id: str):
-    result = await vendor_collection.delete_one({"vendor_id": vendor_id})
-    if result.deleted_count == 0:
-        raise HTTPException(status_code=404, detail="Vendor not found")
-    return {"message": f"Vendor with ID {vendor_id} deleted successfully"}
-
-
-# View all yarn requests (optionally filter by status)
-@app.get("/view_yarn/")
-async def view_yarn(status: Optional[str] = None):
-    query = {"status": status} if status else {}
-    yarn_cursor = requests_collection.find(query, {"_id": 0})
-    yarn_list = await yarn_cursor.to_list(length=None)
-    if not yarn_list:
-        raise HTTPException(status_code=404, detail="No yarn requests found")
-    return yarn_list
-
-
-
-
-
-def convert_objectid_to_str(data):
-    """Recursively converts ObjectId to string in the data."""
-    if isinstance(data, dict):
-        return {key: convert_objectid_to_str(value) for key, value in data.items()}
-    elif isinstance(data, list):
-        return [convert_objectid_to_str(item) for item in data]
-    elif isinstance(data, ObjectId):
-        return str(data)
-    else:
-        return data
-
-
-
 
 # Function to create a knitting record when an order is received
 async def create_knitting_record(po_number: str, yarn_count: int):
