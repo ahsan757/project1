@@ -18,7 +18,6 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import List, Optional
-from motor.motor_asyncio import AsyncIOMotorClient
 from bson import ObjectId
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
@@ -27,7 +26,7 @@ import uuid
 import io
 
 # Database connection
-client = motor.motor_asyncio.AsyncIOMotorClient('mongodb://localhost:27017')
+client = motor.motor_asyncio.AsyncIOMotorClient('mongodb+srv://Ahsan12:Ahsan12@botss.rvm4jx6.mongodb.net/')
 db = client["yarn_db"]
 requests_collection = db["requests"]
 received_collection = db["received"]
@@ -60,6 +59,7 @@ class YarnRequest(BaseModel):
 class YarnReceived(BaseModel):
     spun_type: str
     kgs_received: float
+    bags_recevied:int
     received_date: datetime
     vendor_id: str
 
@@ -83,6 +83,7 @@ class Label(BaseModel):
 class Order(BaseModel):
     customer_name: str
     order_number: str
+    bags:int
     company_order_number: str
     yarn_count: int
     content: str
@@ -155,10 +156,12 @@ async def receive_yarn(received_data: YarnReceived):
         raise HTTPException(status_code=404, detail="Request not found")
 
     remaining_kgs = request['kgs'] - received_data.kgs_received
+    remaining_bags=request['bags']-received_data.bags_recevied
 
     received_entry = {
         "spun_type": received_data.spun_type,
         "kgs_received": received_data.kgs_received,
+        "bags_recevied":received_data.bags_recevied,
         "received_date": received_data.received_date,
         "request_id": str(request["_id"]),
         "vendor_id": received_data.vendor_id
@@ -168,7 +171,7 @@ async def receive_yarn(received_data: YarnReceived):
     if remaining_kgs <= 0:
         update_data = {"status": "completed", "received_at": datetime.now()}
     else:
-        update_data = {"kgs": remaining_kgs}
+        update_data = {"kgs": remaining_kgs,"bags":remaining_bags}
 
     await requests_collection.update_one(
         {"_id": request["_id"]},
