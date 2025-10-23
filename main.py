@@ -53,6 +53,8 @@ class YarnRequest(BaseModel):
     spun_type: str
     bags: int
     kgs: float
+    vendor_id:str
+    order_no:str
     status: str = "pending"
 
 # Model to represent received yarn
@@ -62,6 +64,7 @@ class YarnReceived(BaseModel):
     bags_recevied:int
     received_date: datetime
     vendor_id: str
+    order_no:str
 
 # Model for vendor registration
 class Vendor(BaseModel):
@@ -91,6 +94,7 @@ class Order(BaseModel):
     sizes: List[str]
     knitting_type: str
     dyeing_type: str
+    dyeing_color:str
     finishing_type: str
     po_number: str
     labels: Optional[List[Label]] = None  # Up to 4 labels (can be empty)
@@ -149,6 +153,7 @@ async def receive_yarn(received_data: YarnReceived):
         raise HTTPException(status_code=400, detail="Please register the vendor first.")
 
     request = await requests_collection.find_one({
+        "order_no":received_data.order_no,
         "spun_type": received_data.spun_type,
         "status": "pending"
     })
@@ -163,7 +168,7 @@ async def receive_yarn(received_data: YarnReceived):
         "kgs_received": received_data.kgs_received,
         "bags_recevied":received_data.bags_recevied,
         "received_date": received_data.received_date,
-        "request_id": str(request["_id"]),
+        "order_no":received_data.order_no,
         "vendor_id": received_data.vendor_id
     }
     await received_collection.insert_one(received_entry)
@@ -256,7 +261,9 @@ async def create_knitting_record(po_number: str, yarn_count: int):
     knitting_data = {
         "po_number": po_number,
         "available_yarn": yarn_count,
-        "processed_yarn": 0
+        "processed_yarn": 0,
+        "today_recive":0,
+        "totay_deleviry":0
     }
     # Insert the knitting data into the knitting collection
     await knitting_collection.insert_one(knitting_data)
@@ -264,7 +271,9 @@ async def create_triming_record(po_number: str):
     trim_data = {
         "po_number": po_number,
         "available_yarn": 0,
-        "processed_yarn": 0
+        "processed_yarn": 0,
+        "today_recive":0,
+        "totay_deleviry":0
     }
     # Insert the knitting data into the knitting collection
     await trim_collection.insert_one(trim_data)
@@ -274,7 +283,9 @@ async def create_dying_record(po_number: str):
     dying_data = {
         "po_number": po_number,
         "available_yarn": 0,
-        "processed_yarn": 0
+        "processed_yarn": 0,
+        "today_recive":0,
+        "totay_deleviry":0
     }
     # Insert the dying data into the dying collection
     await dying_collection.insert_one(dying_data)
@@ -305,7 +316,7 @@ async def receive_order(order: Order):
 
 # Endpoint to change processed yarn for a specific PO number
 @app.put("/knitting/process_yarn/")
-async def process_yarn(po_number: str, amount: float):
+async def process_yarn(po_number: str, amount: float,deliver:float):
     # Find the record for the given PO number in the knitting collection
     knitting_record = await knitting_collection.find_one({"po_number": po_number})
     dying_record = await dying_collection.find_one({"po_number": po_number})
@@ -314,8 +325,8 @@ async def process_yarn(po_number: str, amount: float):
         # Check if there is enough available yarn to process
         if knitting_record['available_yarn'] >= amount:
             new_available_yarn = knitting_record['available_yarn'] - amount
-            new_processed_yarn = knitting_record['processed_yarn'] + amount
-            new_dying_yarn=dying_record['available_yarn']+ amount
+            new_processed_yarn = knitting_record['processed_yarn'] + deliver
+            new_dying_yarn=dying_record['available_yarn']+ deliver
 
             # Update the knitting record
             await knitting_collection.update_one(
@@ -336,7 +347,7 @@ async def process_yarn(po_number: str, amount: float):
     else:
         raise HTTPException(status_code=404, detail="PO number not found in knitting department")
 @app.put("/dying/process_yarn/")
-async def dye_yarn(po_number: str, amount: float):
+async def dye_yarn(po_number: str, amount: float,deliver:float):
     # Find the record for the given PO number in the knitting collection
 
     trimrecord=await trim_collection.find_one({"po_number": po_number})
@@ -345,8 +356,8 @@ async def dye_yarn(po_number: str, amount: float):
         # Check if there is enough available yarn to process
         if dying_record['available_yarn'] >= amount:
             new_available_yarn = dying_record['available_yarn'] - amount
-            new_processed_yarn = dying_record['processed_yarn'] + amount
-            new_trim_yarn=trimrecord['available_yarn']+ amount
+            new_processed_yarn = dying_record['processed_yarn'] + deliver
+            new_trim_yarn=trimrecord['available_yarn']+ deliver
             
 
             # Update the knitting record
@@ -369,7 +380,7 @@ async def dye_yarn(po_number: str, amount: float):
         raise HTTPException(status_code=404, detail="PO number not found in knitting department")
 
 @app.put("/trim/process_yarn/")
-async def trim_yarn(po_number: str, amount: float):
+async def trim_yarn(po_number: str, amount: float,deliver:float):
     # Find the record for the given PO number in the knitting collection
     
     
@@ -380,8 +391,8 @@ async def trim_yarn(po_number: str, amount: float):
         # Check if there is enough available yarn to process
         if trimrecord['available_yarn'] >= amount:
             new_available_yarn = trimrecord['available_yarn'] - amount
-            new_processed_yarn = trimrecord['processed_yarn'] + amount
-            final_product=adminrecord['processed_yarn']+ amount
+            new_processed_yarn = trimrecord['processed_yarn'] + deliver
+            final_product=adminrecord['processed_yarn']+ deliver
 
             # Update the knitting record
             await trim_collection.update_one(
