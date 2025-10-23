@@ -210,6 +210,28 @@ async def view_yarn(status: Optional[str] = None):
     if not yarn_list:
         raise HTTPException(status_code=404, detail="No yarn requests found")
     return yarn_list
+@app.get("/view_all_yarn")
+async def get_all_yarn_tracking():
+    # Fetch all records from the knitting collection
+    total_yarn = await received_collection.find().to_list(length=100)  # Limit to 100 records (optional)
+    
+    total_yarn = convert_objectid_to_str(total_yarn)
+    
+    if total_yarn:
+        return total_yarn
+    else:
+        raise HTTPException(status_code=404, detail="No yarn tracking records found")
+@app.get("/view_all_vendors")
+async def get_all_yarn_tracking():
+    # Fetch all records from the knitting collection
+    total_vendors = await vendor_collection.find().to_list(length=100)  # Limit to 100 records (optional)
+    
+    total_vendors = convert_objectid_to_str(total_vendors)
+    
+    if total_vendors:
+        return total_vendors
+    else:
+        raise HTTPException(status_code=404, detail="No vendor records found")
 
 
 
@@ -415,7 +437,7 @@ async def get_all_yarn_tracking():
     if trim_records:
         return {"knitting_records": trim_records}
     else:
-        raise HTTPException(status_code=404, detail="No yarn tracking records found in dying department")
+        raise HTTPException(status_code=404, detail="No yarn tracking records found in triming department")
 @app.get("/admin/yarn/")
 async def get_all_yarn_tracking():
     # Fetch all records from the knitting collection
@@ -426,7 +448,7 @@ async def get_all_yarn_tracking():
     if admin_records:
         return {"knitting_records": admin_records}
     else:
-        raise HTTPException(status_code=404, detail="No yarn tracking records found in knitting department")
+        raise HTTPException(status_code=404, detail="No yarn tracking records found in process")
 
 # Endpoint to retrieve dying record for a specific PO number
 @app.get("/download_po/{po_number}")
