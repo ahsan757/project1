@@ -571,3 +571,14 @@ async def download_po(po_number: str):
         media_type="application/pdf",
         headers={"Content-Disposition": f"attachment; filename=PO_{po_number}.pdf"}
     )
+@app.get("/view_all_po")
+async def get_all_yarn_tracking():
+    # Fetch all records from the knitting collection
+    total_po = await orders_collection.find().to_list(length=100)  # Limit to 100 records (optional)
+    
+    total_po = convert_objectid_to_str(total_po)
+    
+    if total_po:
+        return total_po
+    else:
+        raise HTTPException(status_code=404, detail="No yarn tracking records found")
