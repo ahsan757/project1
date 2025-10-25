@@ -77,9 +77,11 @@ class Vendor(BaseModel):
 class Label(BaseModel):
     vendor_id: str
     quality: str
+    sizes:str
     printed_woven: str  # Can be either 'Printed' or 'Woven'
     elastic_type: str  # Either 'in-house' or 'outsourced'
-    elastic_vendor_id: Optional[str] = None  # Optional vendor ID if outsourced
+    elastic_vendor_id: Optional[str] = None  
+    additional_info:str
     trims: List[str] = []  # List of trim items (e.g., Poly Bag, Carton, Belly Band)
 
 # Define the Order Pydantic model with additional trim fields
@@ -97,6 +99,7 @@ class Order(BaseModel):
     dyeing_color:str
     finishing_type: str
     po_number: str
+    additional_info:str
     labels: Optional[List[Label]] = None  # Up to 4 labels (can be empty)
 
     # Optional: Convert MongoDB ObjectId to string for response
@@ -530,19 +533,44 @@ def generate_po_pdf(po_number: str, order: dict) -> io.BytesIO:
     p.drawString(100, 610, f"Sizes: {', '.join(order['sizes'])}")
     p.drawString(100, 590, f"Knitting Type: {order['knitting_type']}")
     p.drawString(100, 570, f"Dyeing Type: {order['dyeing_type']}")
-    p.drawString(100, 550, f"Finishing Type: {order['finishing_type']}")
-    
+    p.drawString(100, 550, f"Dyeing Color: {order['dyeing_color']}")
+    p.drawString(100, 530, f"Finishing Type: {order['finishing_type']}")
+    p.drawString(100, 510, f"Bags: {order['bags']}")
+    p.drawString(100, 490, f"Additional Info: {order['additional_info']}")
+
     # Labels Section: Format each label into a readable string
-    if order['labels']:
-        labels_str = []
+    if order.get('labels'):
+        y_position = 470  # starting vertical position
+        p.drawString(100, y_position, "Labels:")
+        y_position -= 15  # move down for next line
+
         for label in order['labels']:
-            label_info = f"Vendor ID: {label['vendor_id']}, Quality: {label['quality']}, Printed/Woven: {label['printed_woven']}"
-            if 'elastic_type' in label:
-                label_info += f", Elastic: {label['elastic_type']}"
-            if 'elastic_vendor_id' in label and label['elastic_vendor_id']:
-                label_info += f", Elastic Vendor ID: {label['elastic_vendor_id']}"
-            labels_str.append(label_info)
-        p.drawString(100, 530, f"Labels: {'; '.join(labels_str)}")
+            label_lines = [
+                f"Vendor ID: {label['vendor_id']}",
+                f"Quality: {label['quality']}",
+                f"Sizes: {label['sizes']}",
+                f"Printed/Woven: {label['printed_woven']}",
+                f"Elastic: {label['elastic_type']}",
+            ]
+
+            if label.get('elastic_vendor_id'):
+                label_lines.append(f"Elastic Vendor ID: {label['elastic_vendor_id']}")
+            label_lines.append(f"Additional Info: {label['additional_info']}")
+
+            # Add each line to the PDF
+            for line in label_lines:
+                p.drawString(120, y_position, line)
+                y_position -= 15  # adjust line spacing
+            y_position -= 10  # add extra space between labels
+
+            # Add trims (if any)
+            if label.get('trims'):
+                p.drawString(120, y_position, "Trims:")
+                y_position -= 15
+                for trim in label['trims']:
+                    p.drawString(140, y_position, trim)
+                    y_position -= 15
+                y_position -= 10  # extra space between trim items
 
     # Finalize the PDF
     p.showPage()
